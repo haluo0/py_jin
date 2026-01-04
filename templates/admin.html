@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>巡检系统 - 后台管理</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="container mt-4">
+    <h2>创建新物品</h2>
+    <form method="post">
+        <div class="mb-3">
+            <label class="form-label">物品名称</label>
+            <input name="name" class="form-control" required>
+        </div>
+        <div class="mb-3">
+            <label class="form-label">位置</label>
+            <input name="location" class="form-control">
+        </div>
+        <div class="mb-3">
+            <label class="form-label">检查项（每行一个）</label>
+            <textarea name="check_item" rows="4" class="form-control" placeholder="例如：&#10;外观完好&#10;电源正常&#10;无破损"></textarea>
+        </div>
+        <button type="submit" class="btn btn-primary">创建物品并生成二维码</button>
+    </form>
+
+    <hr>
+    <h3>已有物品（可打印二维码）</h3>
+    {% if items_with_qr %}
+        {% for item, qr_b64 in items_with_qr %}
+        <div class="card mb-3">
+            <div class="card-body">
+                <h5 class="card-title">{{ item.name }}</h5>
+                <p class="card-text">位置：{{ item.location }}</p>
+                <!-- 关键：显示 Base64 二维码 -->
+                <img src="{{ qr_b64 }}" alt="QR Code" width="180" class="border p-2 bg-white">
+                <p class="mt-2"><small>扫码地址: {{ request.host_url }}scan/{{ item.id }}</small></p>
+                <button class="btn btn-outline-secondary btn-sm mt-2" onclick="window.print()">🖨️ 打印此码</button>
+            </div>
+        </div>
+        {% endfor %}
+    {% else %}
+        <p>暂无物品，请先创建。</p>
+    {% endif %}
+</body>
+</html>

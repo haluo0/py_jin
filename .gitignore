@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+inspection.db
+venv/
+.env
+*.log
+static/qrcodes/       # 如果你用的是 Render 动态生成方案，这些图不需要提交

@@ -1,0 +1,4 @@
+Flask
+qrcode[pil]
+psycopg2-binary
+flask_sqlalchemy
