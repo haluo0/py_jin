@@ -1,5 +1,6 @@
 Flask==3.0.3
 SQLAlchemy==2.0.43
+Flask-SQLAlchemy==3.1.1
 psycopg2-binary==2.9.10   # 👈 关键！使用较新且稳定的版本
 gunicorn==23.0.0
 qrcode==7.4.2
