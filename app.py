@@ -5,6 +5,7 @@ import io
 import base64
 import json
 from models import db, Item, Inspection
+from sqlalchemy import cast, String
 
 app = Flask(__name__)
 
@@ -105,7 +106,7 @@ def dashboard():
     items = Item.query.all()
     inspected_ids = {
         ins.item_id for ins in Inspection.query.filter(
-            Inspection.timestamp.like(f"{ym}%")
+            cast(Inspection.timestamp, String).like(f"{ym}-%")
         ).all()
     }
 
@@ -118,7 +119,8 @@ def dashboard():
 with app.app_context():
     db.create_all()
     print("✅ 数据库表已在启动时创建")
-# 初始化数据库（仅本地开发用）
+
+
 # if __name__ == '__main__':
 #     with app.app_context():
 #         db.create_all()
