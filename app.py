@@ -10,12 +10,21 @@ app = Flask(__name__)
 
 # Render 提供 DATABASE_URL 环境变量
 DATABASE_URL = os.environ.get('DATABASE_URL')
-if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+if DATABASE_URL:
+    if DATABASE_URL.startswith("postgres://"):
+        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+    # 👇 强制添加 SSL 模式（Render PostgreSQL 要求）
+    if "?sslmode=" not in DATABASE_URL:
+        DATABASE_URL += "?sslmode=require"
+else:
+    DATABASE_URL = 'sqlite:///inspection.db'
 
-app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL or 'sqlite:///inspection.db'
+app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    "pool_pre_ping": True,      # 每次取连接前 ping 一下，避免坏连接
+    "pool_recycle": 300,        # 5分钟重建连接，防止长时间 idle 导致 SSL 失效
+}
 db.init_app(app)
 # @app.before_first_request
 # def create_tables():
