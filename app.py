@@ -107,4 +107,9 @@ def dashboard():
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
+    # 本地开发用
     app.run(debug=True)
+else:
+    # Render 生产环境
+    with app.app_context():
+        db.create_all()
