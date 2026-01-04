@@ -33,15 +33,22 @@ db.init_app(app)
 #     print("✅ 数据库表已初始化")
 # 动态生成 Base64 二维码
 def generate_qr_base64(url):
-    qr = qrcode.QRCode(version=1, box_size=8, border=2)
-    qr.add_data(url)
-    qr.make(fit=True)
-    img = qr.make_image(image_factory=PilImage, fill_color='black', back_color='white')
-    buffer = io.BytesIO()
-    img.save(buffer, format="PNG")  # ✅ 现在 safe！
-    img_str = base64.b64encode(buffer.getvalue()).decode()
-    return f"data:image/png;base64,{img_str}"
-
+    try:
+        qr = qrcode.QRCode(version=1, box_size=8, border=2)
+        qr.add_data(url)
+        qr.make(fit=True)
+        
+        # 使用指定的 image_factory
+        img = qr.make_image(image_factory=PilImage, fill_color='black', back_color='white')
+        buffer = io.BytesIO()
+        img.save(buffer, format="PNG")  # 确保 Pillow 能够正确执行此操作
+        img_str = base64.b64encode(buffer.getvalue()).decode('utf-8')  # 明确指定解码格式
+        
+        return f"data:image/png;base64,{img_str}"
+    
+    except Exception as e:
+        print(f"Error generating QR code: {e}")
+        return None
 @app.route('/')
 def index():
     return redirect('/admin')
