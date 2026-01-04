@@ -17,10 +17,10 @@ app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL or 'sqlite:///inspection.db
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db.init_app(app)
-@app.before_first_request
-def create_tables():
-    db.create_all()
-    print("✅ 数据库表已初始化")
+# @app.before_first_request
+# def create_tables():
+#     db.create_all()
+#     print("✅ 数据库表已初始化")
 # 动态生成 Base64 二维码
 def generate_qr_base64(url):
     qr = qrcode.QRCode(version=1, box_size=8, border=2)
