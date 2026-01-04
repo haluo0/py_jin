@@ -35,7 +35,7 @@
                 <!-- 关键：显示 Base64 二维码 -->
                 <img src="{{ qr_b64 }}" alt="QR Code" width="180" class="border p-2 bg-white">
                 <p class="mt-2"><small>扫码地址: {{ request.host_url }}scan/{{ item.id }}</small></p>
-                <button class="btn btn-outline-secondary btn-sm mt-2" onclick="window.print()">🖨️ 打印此码</button>
+                <!-- <button class="btn btn-outline-secondary btn-sm mt-2" onclick="window.print()">🖨️ 打印此码</button> -->
             </div>
         </div>
         {% endfor %}

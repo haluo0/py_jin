@@ -6,7 +6,7 @@ import base64
 import json
 from models import db, Item, Inspection
 from sqlalchemy import cast, String
-
+from qrcode.image.pil import PilImage 
 app = Flask(__name__)
 
 # Render 提供 DATABASE_URL 环境变量
@@ -36,9 +36,9 @@ def generate_qr_base64(url):
     qr = qrcode.QRCode(version=1, box_size=8, border=2)
     qr.add_data(url)
     qr.make(fit=True)
-    img = qr.make_image(fill='black', back_color='white')
+    img = qr.make_image(image_factory=PilImage, fill_color='black', back_color='white')
     buffer = io.BytesIO()
-    img.save(buffer, format="PNG")
+    img.save(buffer, format="PNG")  # ✅ 现在 safe！
     img_str = base64.b64encode(buffer.getvalue()).decode()
     return f"data:image/png;base64,{img_str}"
 
