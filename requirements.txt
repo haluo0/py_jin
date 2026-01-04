@@ -2,3 +2,4 @@ Flask
 qrcode[pil]
 psycopg2-binary
 flask_sqlalchemy
+gunicorn          # ← 新增这一行

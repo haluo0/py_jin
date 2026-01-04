@@ -104,12 +104,12 @@ def dashboard():
     return render_template('dashboard.html', status_list=status_list, ym=ym)
 
 # 初始化数据库（仅本地开发用）
-if __name__ == '__main__':
-    with app.app_context():
-        db.create_all()
-    # 本地开发用
-    app.run(debug=True)
-else:
-    # Render 生产环境
-    with app.app_context():
-        db.create_all()
+# if __name__ == '__main__':
+#     with app.app_context():
+#         db.create_all()
+#     # 本地开发用
+#     app.run(debug=True)
+# else:
+#     # Render 生产环境
+#     with app.app_context():
+#         db.create_all()
