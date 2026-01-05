@@ -3,18 +3,18 @@ services:
     name: inspection-system
     runtime: python
     plan: free
-    buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn -w 2 -b 0.0.0.0:$PORT app:app
-    buildEnvVars:  # ✅ 构建阶段生效（关键！）
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "gunicorn -w 2 -b 0.0.0.0:$PORT app:app"
+    buildEnvVars:
       - key: PYTHON_VERSION
         value: "3.12.7"
-    envVars:       # ✅ 运行阶段生效（数据库、密码等）
+    envVars:
       - key: ADMIN_PASSWORD
-        sync: false 
-      - fromDatabase:
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
           name: inspection-db
           property: connectionString
-        key: DATABASE_URL 
 
 databases:
   - name: inspection-db
