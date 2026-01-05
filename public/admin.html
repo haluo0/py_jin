@@ -94,7 +94,7 @@
 </head>
 <body>
 
-  <div id="loginOverlay">
+  <div id="loginOverlay" style="display: none;">
     <div class="login-box">
       <h2>🔐 管理员认证</h2>
       <input type="password" id="adminPwdInput" placeholder="请输入访问密码" />
@@ -189,19 +189,29 @@
     // 页面加载时自动检查缓存
     window.onload = () => {
       const cachedData = localStorage.getItem('admin_session');
+      const loginOverlay = document.getElementById('loginOverlay');
+      const adminContent = document.getElementById('adminContent');
+
       if (cachedData) {
         const session = JSON.parse(cachedData);
         const now = new Date().getTime();
-        
-        // 检查是否在 10 分钟有效期内
+
         if (now - session.timestamp < EXPIRE_TIME) {
-          verifyAndLoad(session.pwd);
+          // 尝试自动登录
+          verifyAndLoad(session.pwd).then(success => {
+            if (!success) {
+              // 自动登录失败，显示登录页
+              loginOverlay.style.display = 'flex';
+            }
+          });
           return;
         } else {
-          localStorage.removeItem('admin_session'); // 过期清理
+          localStorage.removeItem('admin_session'); // 清理过期数据
         }
       }
-      // 如果没有有效缓存，页面保持显示 loginOverlay
+
+      // 没有有效 session，直接显示登录界面
+      loginOverlay.style.display = 'flex';
     };
 
     // --- 3. 数据加载逻辑 (已移除所有 prompt) ---
