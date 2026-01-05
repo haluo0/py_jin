@@ -5,9 +5,10 @@ services:
     plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn -w 2 -b 0.0.0.0:$PORT app:app
-    envVars:
+    buildEnvVars:  # ✅ 构建阶段生效（关键！）
       - key: PYTHON_VERSION
-        value: "3.12.7"          # 👈 关键：降级到 Python 3.12
+        value: "3.12.7"
+    envVars:       # ✅ 运行阶段生效（数据库、密码等）
       - key: ADMIN_PASSWORD
         sync: false 
       - fromDatabase:
@@ -17,4 +18,4 @@ services:
 
 databases:
   - name: inspection-db
-    plan: free 
+    plan: free
