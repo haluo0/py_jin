@@ -1,139 +1,185 @@
-from flask import Flask, render_template, request, redirect, url_for, jsonify
 import os
-import qrcode
-import io
-import base64
 import json
-from models import db, Item, Inspection
-from sqlalchemy import cast, String
-from qrcode.image.pil import PilImage 
-app = Flask(__name__)
+import uuid
+import time
+import psycopg2
+from psycopg2.extras import RealDictCursor
+from flask import Flask, request, jsonify, send_from_directory
+from flask_cors import CORS
 
-# Render 提供 DATABASE_URL 环境变量
-DATABASE_URL = os.environ.get('DATABASE_URL')
-if DATABASE_URL:
-    if DATABASE_URL.startswith("postgres://"):
-        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
-    # 👇 强制添加 SSL 模式（Render PostgreSQL 要求）
-    if "?sslmode=" not in DATABASE_URL:
-        DATABASE_URL += "?sslmode=require"
-else:
-    DATABASE_URL = 'sqlite:///inspection.db'
+app = Flask(__name__, static_folder='public', static_url_path='')
+CORS(app)
 
-app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-    "pool_pre_ping": True,      # 每次取连接前 ping 一下，避免坏连接
-    "pool_recycle": 300,        # 5分钟重建连接，防止长时间 idle 导致 SSL 失效
-}
-db.init_app(app)
-# @app.before_first_request
-# def create_tables():
-#     db.create_all()
-#     print("✅ 数据库表已初始化")
-# 动态生成 Base64 二维码
-def generate_qr_base64(url):
-    try:
-        qr = qrcode.QRCode(version=1, box_size=8, border=2)
-        qr.add_data(url)
-        qr.make(fit=True)
-        
-        # 使用指定的 image_factory
-        img = qr.make_image(image_factory=PilImage, fill_color='black', back_color='white')
-        buffer = io.BytesIO()
-        img.save(buffer, format="PNG")  # 确保 Pillow 能够正确执行此操作
-        img_str = base64.b64encode(buffer.getvalue()).decode('utf-8')  # 明确指定解码格式
-        
-        return f"data:image/png;base64,{img_str}"
+# --- 数据库配置 ---
+# Render 会在后台提供 DATABASE_URL 环境变量
+DATABASE_URL = os.getenv('DATABASE_URL')
+ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD', '123')
+
+def get_db_connection():
+    # 如果有云端数据库 URL，用 Postgres
+    if os.getenv('DATABASE_URL'):
+        return psycopg2.connect(os.getenv('DATABASE_URL'), sslmode='require')
+    # 否则在本地运行，自动切换到 SQLite (方便调试)
+    else:
+        import sqlite3
+        conn = sqlite3.connect('local_test.db')
+        conn.row_factory = sqlite3.Row
+        return conn
+# --- 数据库初始化 ---
+def init_db():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    is_pg = os.getenv('DATABASE_URL') is not None
     
-    except Exception as e:
-        print(f"Error generating QR code: {e}")
-        return None
-@app.route('/')
-def index():
-    return redirect('/admin')
-
-@app.route('/admin', methods=['GET', 'POST'])
-def admin():
-    if request.method == 'POST':
-        name = request.form['name']
-        location = request.form['location']
-        check_items_raw = request.form['check_item'].strip()
-        check_items = [x.strip() for x in check_items_raw.split('\n') if x.strip()]
-        
-        item = Item(name=name, location=location, check_items=json.dumps(check_items))
-        db.session.add(item)
-        db.session.commit()
-
-        return redirect('/admin')
-
-    items = Item.query.all()
-    # 为每个物品生成动态二维码 Base64
-    items_with_qr = []
-    for item in items:
-        scan_url = f"{request.host_url}scan/{item.id}"
-        qr_b64 = generate_qr_base64(scan_url)
-        items_with_qr.append((item, qr_b64))
-    return render_template('admin.html', items_with_qr=items_with_qr)
-
-@app.route('/scan/<int:item_id>', methods=['GET', 'POST'])
-def scan(item_id):
-    item = Item.query.get_or_404(item_id)
-    check_items = json.loads(item.check_items)
-
-    if request.method == 'POST':
-        checked_by = request.form['checked_by']
-        remarks = request.form.get('remarks', '')
-        results = {}
-        for chk in check_items:
-            results[chk] = 'on' in request.form.getlist(f"check_{chk}")
-
-        inspection = Inspection(
-            item_id=item_id,
-            checked_by=checked_by,
-            results=json.dumps(results),
-            remarks=remarks
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS items (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            location TEXT,
+            check_items TEXT NOT NULL
         )
-        db.session.add(inspection)
-        db.session.commit()
-        return '''
-        <div class="container mt-5 text-center">
-            <h2>✅ 检查提交成功！</h2>
-            <a href="/" class="btn btn-primary">返回首页</a>
-        </div>
-        '''
-
-    return render_template('scan.html', item=item, check_items=check_items)
-
-@app.route('/dashboard')
-def dashboard():
-    from datetime import datetime
-    ym = request.args.get('ym', datetime.now().strftime("%Y-%m"))
+    ''')
     
-    items = Item.query.all()
-    inspected_ids = {
-        ins.item_id for ins in Inspection.query.filter(
-            cast(Inspection.timestamp, String).like(f"{ym}-%")
-        ).all()
-    }
+    # 根据数据库类型选择自增语法
+    id_type = "SERIAL PRIMARY KEY" if is_pg else "INTEGER PRIMARY KEY AUTOINCREMENT"
+    
+    cur.execute(f'''
+        CREATE TABLE IF NOT EXISTS inspections (
+            id {id_type},
+            item_id TEXT NOT NULL,
+            check_results TEXT NOT NULL,
+            signature TEXT,
+            inspected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT fk_item FOREIGN KEY(item_id) REFERENCES items(id) ON DELETE CASCADE
+        )
+    ''')
+    conn.commit()
+    cur.close()
+    conn.close()
+# 只有在配置了数据库 URL 的情况下才初始化（防止本地报错）
+if DATABASE_URL:
+    init_db()
 
-    status_list = [
-        {'item': item, 'inspected': item.id in inspected_ids}
-        for item in items
-    ]
-    return render_template('dashboard.html', status_list=status_list, ym=ym)
+# --- 核心查询函数 ---
+def query_db(query, args=(), one=False):
+    conn = get_db_connection()
+    is_pg = isinstance(conn, psycopg2.extensions.connection)
+    
+    if is_pg:
+        # PostgreSQL 逻辑
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        formatted_query = query.replace('?', '%s')
+    else:
+        # SQLite 逻辑
+        cur = conn.cursor()
+        formatted_query = query # SQLite 原生支持 ?
+        
+    cur.execute(formatted_query, args)
+    
+    # 获取结果
+    if cur.description:
+        rv = cur.fetchall()
+        # 将结果统一转为字典列表
+        if is_pg:
+            results = [dict(r) for r in rv]
+        else:
+            results = [dict(r) for r in rv]
+    else:
+        results = []
+        
+    conn.commit()
+    cur.close()
+    conn.close()
+    
+    if results:
+        return (results[0] if one else results)
+    return None if one else []
+# --- 路由接口 (逻辑保持不变，底层已自动适配) ---
 
-with app.app_context():
-    db.create_all()
-    print("✅ 数据库表已在启动时创建")
+@app.route('/')
+def serve_root():
+    return "🚀 巡检系统服务已启动。请访问 /admin.html"
 
+@app.route('/api/items', methods=['POST'])
+def create_item():
+    data = request.json
+    name = data.get('name')
+    location = data.get('location')
+    check_items = data.get('checkItems')
+    if not name or not isinstance(check_items, list):
+        return jsonify({"error": "缺少必要字段"}), 400
+
+    item_id = f"item_{int(time.time())}_{uuid.uuid4().hex[:5]}"
+    query_db('INSERT INTO items (id, name, location, check_items) VALUES (?, ?, ?, ?)',
+             (item_id, name, location, json.dumps(check_items)))
+    
+    return jsonify({"id": item_id, "name": name})
+
+@app.route('/api/items/<id>', methods=['GET'])
+def get_item(id):
+    row = query_db('SELECT * FROM items WHERE id = ?', (id,), one=True)
+    if not row: return jsonify({"error": "未找到"}), 404
+    item = dict(row)
+    item['check_items'] = json.loads(item['check_items'])
+    return jsonify(item)
+
+@app.route('/api/inspections', methods=['POST'])
+def submit_inspection():
+    data = request.json
+    query_db('INSERT INTO inspections (item_id, check_results, signature) VALUES (?, ?, ?)',
+             (data.get('item_id'), json.dumps(data.get('check_results')), data.get('signature')))
+    return jsonify({"success": True})
+
+@app.route('/api/reports/monthly', methods=['GET'])
+def get_monthly_report():
+    if request.args.get('pwd') != ADMIN_PASSWORD:
+        return jsonify({"error": "Unauthorized"}), 403
+    rows = query_db('SELECT * FROM items ORDER BY name')
+    return jsonify([dict(r) for r in rows])
+
+@app.route('/api/inspections/all', methods=['GET'])
+def get_all_inspections():
+    rows = query_db('SELECT * FROM inspections ORDER BY inspected_at DESC')
+    return jsonify([dict(r) for r in rows])
+
+@app.route('/api/inspections/<id>', methods=['GET'])
+def get_inspection_detail(id):
+    if id == "null" or not id:
+        return jsonify({"error": "ID不能为空"}), 400
+        
+    # 尝试转数字以兼容 SQLite
+    search_id = id
+    try:
+        search_id = int(id)
+    except:
+        pass
+
+    row = query_db('SELECT * FROM inspections WHERE id = ?', (search_id,), one=True)
+    if not row: 
+        return jsonify({"error": "记录未找到"}), 404
+    
+    res = dict(row)
+    if isinstance(res['check_results'], str):
+        res['check_results'] = json.loads(res['check_results'])
+    return jsonify(res)
+
+@app.route('/api/items/<id>', methods=['DELETE'])
+def delete_item(id):
+    query_db('DELETE FROM items WHERE id = ?', (id,))
+    return jsonify({"success": True})
 
 # if __name__ == '__main__':
-#     with app.app_context():
-#         db.create_all()
-#     # 本地开发用
-#     app.run(debug=True)
-# else:
-#     # Render 生产环境
-#     with app.app_context():
-#         db.create_all()
+#     # 本地开发测试时，你需要手动设置一个本地或远程的 DATABASE_URL
+#     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 3000)))
+if __name__ == '__main__':
+    init_db()
+    print(f"当前系统设定的管理员密码是: {ADMIN_PASSWORD}")
+    PORT = 3000
+    print(f"\n" + "="*40)
+    print(f"✅ 服务已启动：http://localhost:{PORT}")
+    print(f"📱 扫码页面示例：http://localhost:{PORT}/index.html?id=item_123")
+    print(f"💻 管理后台：http://localhost:{PORT}/admin.html")
+    print("="*40 + "\n")
+    
+    # debug=True 可以在修改代码后自动重启
+    app.run(host='0.0.0.0', port=PORT, debug=True)

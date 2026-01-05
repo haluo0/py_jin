@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>物品检查</title>
+  <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.0.0/dist/signature_pad.umd.min.js"></script>
+  <style>
+    body { font-family: -apple-system, sans-serif; padding: 20px; max-width: 600px; margin: 0 auto; background: #f9f9f9; }
+    .container { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+    .check-item { margin: 12px 0; padding: 10px; background: #fff; border: 1px solid #eee; border-radius: 6px; display: flex; align-items: center; }
+    .check-item input { width: 20px; height: 20px; margin-right: 12px; cursor: pointer; }
+    .check-item label { flex: 1; cursor: pointer; font-size: 1rem; }
+    canvas { border: 1px solid #ddd; width: 100%; height: 150px; background: #fff; border-radius: 4px; touch-action: none; }
+    button { margin-top: 15px; padding: 12px; background: #2ecc71; color: white; border: none; border-radius: 6px; cursor: pointer; width: 100%; font-size: 1rem; }
+    button:active { background: #27ae60; }
+    .clear-btn { background: #95a5a6; margin-top: 5px; padding: 5px; font-size: 0.8rem; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>📋 巡检任务</h2>
+    <div id="item-info">正在加载物品信息...</div>
+    
+    <form id="check-form">
+      <div id="check-items"></div>
+      <h3 style="margin-top:25px; border-top:1px solid #eee; padding-top:15px;">✍️ 签字确认</h3>
+      <canvas id="signature-pad"></canvas>
+      <button type="button" class="clear-btn" onclick="signaturePad.clear()">清除重签</button>
+      
+      <button type="submit" id="submit-btn">提交巡检结果</button>
+    </form>
+    <div id="result"></div>
+  </div>
+
+  <script>
+    const urlParams = new URLSearchParams(window.location.search);
+    const itemId = urlParams.get('id');
+    
+    if (!itemId) {
+      document.body.innerHTML = '<div style="text-align:center;padding:50px;"><h2>❌ 无效的访问链接</h2></div>';
+    }
+
+    const canvas = document.getElementById('signature-pad');
+    const signaturePad = new SignaturePad(canvas);
+
+    // 解决移动端签名笔触偏移问题
+    function resizeCanvas() {
+      const ratio = Math.max(window.devicePixelRatio || 1, 1);
+      canvas.width = canvas.offsetWidth * ratio;
+      canvas.height = canvas.offsetHeight * ratio;
+      canvas.getContext("2d").scale(ratio, ratio);
+    }
+    window.addEventListener("resize", resizeCanvas);
+    resizeCanvas();
+
+    // 加载物品数据
+    fetch(`/api/items/${itemId}`)
+      .then(res => res.json())
+      .then(item => {
+        document.getElementById('item-info').innerHTML = `
+          <div style="background:#f1f3f5; padding:10px; border-radius:8px;">
+            <strong>${item.name}</strong><br>
+            <small style="color:#666;">📍 位置：${item.location || '通用'}</small>
+          </div>
+        `;
+        const container = document.getElementById('check-items');
+        
+        // 关键：渲染时记录顺序
+        item.check_items.forEach((label, index) => {
+          const div = document.createElement('div');
+          div.className = 'check-item';
+          div.innerHTML = `
+            <input type="checkbox" id="check-${index}" class="inspection-cb">
+            <label for="check-${index}">${label}</label>
+          `;
+          container.appendChild(div);
+        });
+      })
+      .catch(err => {
+        document.getElementById('item-info').innerHTML = '<p style="color:red">❌ 物品加载失败</p>';
+      });
+
+    // 提交逻辑
+    document.getElementById('check-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      // if (signaturePad.isEmpty()) {
+      //   alert('请在提交前完成手写签名！');
+      //   return;
+      // }
+
+      const checkboxes = document.querySelectorAll('.inspection-cb');
+      const resultsArray = Array.from(checkboxes).map(cb => cb.checked);
+
+      const data = {
+        item_id: itemId,
+        check_results: resultsArray, // 结果示例: [true, false, true, true, false]
+        signature: signaturePad.toDataURL()
+      };
+
+      const btn = document.getElementById('submit-btn');
+      btn.disabled = true;
+      btn.innerHTML = '正在提交...';
+
+      try {
+        const res = await fetch('/api/inspections', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+        
+        if (!res.ok) throw new Error('网络请求失败');
+        const result = await res.json();
+        
+        if (result.success) {
+          document.getElementById('result').innerHTML = `
+            <div style="text-align:center; padding:30px;">
+              <h2 style="color:#2ecc71;">✅ 提交成功</h2>
+              <p>本次巡检记录已安全归档。</p>
+            </div>`;
+          document.getElementById('check-form').style.display = 'none';
+        }
+      } catch (err) {
+        alert('提交失败：' + err.message);
+        btn.disabled = false;
+        btn.innerHTML = '重新提交';
+      }
+    });
+  </script>
+</body>
+</html>

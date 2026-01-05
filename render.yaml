@@ -1,10 +1,18 @@
 services:
   - type: web
-    name: py-jin-inspection
-    env: python
-    region: oregon          # 可选：oregon, frankfurt 等
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "python app.py"
+    name: inspection-system
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.11.9       # 推荐指定 Python 版本
+      - key: ADMIN_PASSWORD
+        sync: false 
+      - fromDatabase:
+          name: inspection-db
+          property: connectionString
+        key: DATABASE_URL 
+
+databases:
+  - name: inspection-db
+    plan: free 
