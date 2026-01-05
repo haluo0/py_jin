@@ -4,8 +4,10 @@ services:
     runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app
+    startCommand: gunicorn -w 2 -b 0.0.0.0:$PORT app:app
     envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.7"          # 👈 关键：降级到 Python 3.12
       - key: ADMIN_PASSWORD
         sync: false 
       - fromDatabase:

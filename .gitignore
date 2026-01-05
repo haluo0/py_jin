@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
 inspection.db
+local_test.db
 venv/
 .env
 *.log
