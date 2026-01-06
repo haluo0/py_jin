@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>站点巡检总表</title>
+    <style>
+        body { font-family: -apple-system, sans-serif; background: #f4f7f6; margin: 0; padding: 15px; }
+        .header { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); margin-bottom: 15px; }
+        h1 { margin: 0; color: #333; font-size: 1.4rem; }
+        
+        /* 月份滚动条 */
+        .month-selector { display: flex; overflow-x: auto; padding: 10px 0; gap: 10px; margin-bottom: 15px; scrollbar-width: none; }
+        .month-selector::-webkit-scrollbar { display: none; }
+        .month-btn { padding: 8px 16px; background: white; border: 1px solid #ddd; border-radius: 20px; white-space: nowrap; cursor: pointer; }
+        .month-btn.active { background: #3498db; color: white; border-color: #3498db; font-weight: bold; }
+
+        /* 设备表格 */
+        .device-table { width: 100%; background: white; border-radius: 12px; border-collapse: collapse; overflow: hidden; }
+        .device-table th { background: #f8f9fa; padding: 12px; text-align: left; color: #666; font-size: 0.9rem; }
+        .device-table td { padding: 15px 12px; border-top: 1px solid #eee; }
+        .device-name { color: #3498db; text-decoration: none; font-weight: bold; }
+        .status-badge { padding: 4px 8px; border-radius: 4px; font-size: 0.8rem; }
+        .status-ok { background: #e8f5e9; color: #2ecc71; }
+        .status-missing { background: #ffebee; color: #e74c3c; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1 id="stationName">加载中...</h1>
+        <p id="stationLocation" style="color: #666; font-size: 0.9rem; margin-top: 5px;"></p>
+    </div>
+
+    <div class="month-selector" id="monthSelector"></div>
+
+    <table class="device-table">
+        <thead>
+            <tr>
+                <th>灭火器名称</th>
+                <th>位置</th>
+                <th>本月状态</th>
+            </tr>
+        </thead>
+        <tbody id="deviceList"></tbody>
+    </table>
+
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const stationId = urlParams.get('id');
+        let currentMonth = new Date().toISOString().slice(0, 7); // 格式: "2026-01"
+
+        // 初始化月份按钮
+        function initMonths() {
+            const container = document.getElementById('monthSelector');
+            const now = new Date();
+            for (let i = 1; i <= 12; i++) {
+                const m = i < 10 ? `0${i}` : i;
+                const monthStr = `${now.getFullYear()}-${m}`;
+                const btn = document.createElement('div');
+                btn.className = `month-btn ${monthStr === currentMonth ? 'active' : ''}`;
+                btn.innerText = `${i}月`;
+                btn.onclick = () => {
+                    document.querySelectorAll('.month-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    currentMonth = monthStr;
+                    loadStationData();
+                };
+                container.appendChild(btn);
+            }
+        }
+
+        async function loadStationData() {
+            try {
+                const res = await fetch(`/api/stations/${stationId}/status/${currentMonth}`);
+                const data = await res.json();
+                
+                document.getElementById('stationName').innerText = `🏢 ${data.station.name}`;
+                document.getElementById('stationLocation').innerText = `📍 ${data.station.location}`;
+
+                const tbody = document.getElementById('deviceList');
+                tbody.innerHTML = data.devices.map(dev => {
+                    const status = dev.this_month_status;
+                    const statusHtml = status 
+                        ? `<span class="status-badge status-ok">✔️ 已检</span>` 
+                        : `<span class="status-badge status-missing">❌ 未检</span>`;
+                    
+                    return `
+                        <tr>
+                            <td><a href="device_detail.html?device_id=${dev.id}&station_id=${stationId}" class="device-name">${dev.name}</a></td>
+                            <td style="font-size: 0.85rem; color: #666;">${dev.location}</td>
+                            <td>${statusHtml}</td>
+                        </tr>
+                    `;
+                }).join('');
+            } catch (err) {
+                console.error('加载失败', err);
+            }
+        }
+
+        initMonths();
+        loadStationData();
+    </script>
+</body>
+</html>

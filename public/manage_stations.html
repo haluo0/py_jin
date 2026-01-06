@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>站点管理后台</title>
+    <style>
+        body { font-family: system-ui, -apple-system, sans-serif; background: #f5f7f9; padding: 20px; color: #333; }
+        .container { max-width: 1000px; margin: 0 auto; }
+        .header-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        
+        button { cursor: pointer; padding: 10px 18px; border-radius: 8px; border: none; font-weight: 500; transition: 0.2s; }
+        .btn-primary { background: #3498db; color: white; }
+        .btn-success { background: #2ecc71; color: white; }
+        .btn-outline { background: white; border: 1px solid #ddd; color: #666; }
+        button:hover { opacity: 0.9; transform: translateY(-1px); }
+
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th { text-align: left; padding: 12px; background: #f8f9fa; color: #666; font-weight: 600; }
+        td { padding: 15px 12px; border-bottom: 1px solid #eee; }
+
+        /* 弹窗样式 */
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); align-items: center; justify-content: center; z-index: 1000; }
+        .modal-content { background: white; padding: 25px; border-radius: 12px; width: 420px; max-height: 90vh; overflow-y: auto; }
+        input, textarea { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 14px; }
+        label { font-size: 13px; color: #777; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header-bar">
+        <h1>🛠️ 消防巡检管理后台</h1>
+        <button class="btn-primary" onclick="openModal('stationModal')">+ 创建新巡检站</button>
+    </div>
+
+    <div class="card">
+        <table id="stationTable">
+            <thead>
+                <tr>
+                    <th>站点名称</th>
+                    <th>地理位置</th>
+                    <th>管理操作</th>
+                </tr>
+            </thead>
+            <tbody id="stationList">
+                <tr><td colspan="3" style="text-align:center;">正在加载站点数据...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div id="stationModal" class="modal">
+    <div class="modal-content">
+        <h3>📍 新增巡检站点</h3>
+        <input type="text" id="stName" placeholder="例如：1号宿舍楼 / 变电站A">
+        <input type="text" id="stLoc" placeholder="详细位置说明">
+        <div style="display:flex; gap:10px; margin-top:10px;">
+            <button class="btn-success" style="flex:1" onclick="saveStation()">确认创建</button>
+            <button class="btn-outline" style="flex:1" onclick="closeModal('stationModal')">取消</button>
+        </div>
+    </div>
+</div>
+
+<div id="deviceModal" class="modal">
+    <div class="modal-content">
+        <h3>🧯 添加灭火器到 <span id="targetStationName" style="color:#3498db;"></span></h3>
+        
+        <label>设备名称</label>
+        <input type="text" id="devName" placeholder="如：ABC干粉灭火器 4kg">
+        
+        <label>具体位置</label>
+        <input type="text" id="devLoc" placeholder="如：二楼东侧消火栓旁">
+        
+        <label>规格参数</label>
+        <input type="text" id="devSpecs" placeholder="如：MFZ/ABC4">
+        
+        <label>有效截止日期</label>
+        <input type="date" id="devExpiry">
+        
+        <label>检查项（可增删）</label>
+        <div id="checksContainer" style="margin-bottom:10px;">
+            <!-- 检查项将通过 JS 动态生成 -->
+        </div>
+        <button type="button" class="btn-outline" style="font-size:14px; padding:4px 8px;" onclick="addCheckItem()">➕ 添加检查项</button>
+
+        <div style="display:flex; gap:10px; margin-top:20px;">
+            <button class="btn-success" style="flex:1" onclick="saveDevice()">保存设备</button>
+            <button class="btn-outline" style="flex:1" onclick="closeModal('deviceModal')">返回</button>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+    let activeStationId = null;
+    const expandedStations = new Set(); // 记录哪些站点已展开
+
+    // 加载所有站点
+    async function loadStations() {
+        try {
+            const res = await fetch('/api/stations_all');
+            if (!res.ok) throw new Error("获取数据失败");
+            const stations = await res.json();
+            renderStations(stations);
+        } catch (e) {
+            document.getElementById('stationList').innerHTML = 
+                `<tr><td colspan="3" style="color:red;text-align:center;">错误: ${e.message}</td></tr>`;
+        }
+    }
+
+    // 渲染站点列表（含可展开行）
+    function renderStations(stations) {
+        const tbody = document.getElementById('stationList');
+        if (stations.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:#999;">暂无站点，请点击右上角创建</td></tr>';
+            return;
+        }
+
+        let html = '';
+        stations.forEach(st => {
+            const isExpanded = expandedStations.has(st.id);
+            html += `
+                <tr>
+                    <td>
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <span style="cursor:pointer;" onclick="toggleStation('${st.id}')">
+                                ${isExpanded ? '▼' : '▶'}
+                            </span>
+                            <strong>${st.name}</strong>
+                        </div>
+                    </td>
+                    <td><span style="color:#666;font-size:14px;">${st.location || '未标注'}</span></td>
+                    <td>
+                        <button class="btn-outline" onclick="showStationQR('${st.id}', '${st.name}')">🔍 二维码</button>
+                        <button class="btn-success" style="padding:8px 12px; font-size:13px;" onclick="openDeviceModal('${st.id}', '${st.name}')">+ 增添设备</button>
+                        <button class="btn-danger" style="padding:8px 12px; font-size:13px;" onclick="deleteStation('${st.id}')">🗑️ 删除站</button>
+                    </td>
+                </tr>
+            `;
+            
+            // 展开行：显示设备列表
+            if (isExpanded) {
+                html += `<tr id="expand-${st.id}"><td colspan="3" style="padding:0; background:#fafafa;">`;
+                html += `<div id="devices-${st.id}" style="padding:15px;">加载中...</div>`;
+                html += `</td></tr>`;
+            }
+        });
+        tbody.innerHTML = html;
+
+        // 加载已展开站点的设备
+        stations.forEach(st => {
+            if (expandedStations.has(st.id)) {
+                loadStationDevices(st.id);
+            }
+        });
+    }
+
+    // 切换站点展开/收起
+    async function toggleStation(stationId) {
+        if (expandedStations.has(stationId)) {
+            expandedStations.delete(stationId);
+        } else {
+            expandedStations.add(stationId);
+        }
+        const stationsRes = await fetch('/api/stations_all');
+        const stations = await stationsRes.json();
+        renderStations(stations);
+    }
+
+    // 加载某站点的设备列表（用于展开区域）
+    async function loadStationDevices(stationId) {
+        const container = document.getElementById(`devices-${stationId}`);
+        if (!container) return;
+
+        try {
+            const res = await fetch(`/api/stations/${stationId}/devices_all`);
+            const devices = await res.json();
+            
+            if (devices.length === 0) {
+                container.innerHTML = '<em style="color:#999;">该站点暂无灭火器</em>';
+                return;
+            }
+
+            let devHtml = `<div style="margin-bottom:10px;"><strong>共 ${devices.length} 个灭火器：</strong></div>`;
+            devHtml += devices.map(dev => `
+                <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid #eee; align-items:center;">
+                    <div>
+                        <strong>${dev.name}</strong><br>
+                        <small style="color:#666;">${dev.location}</small>
+                    </div>
+                    <button class="btn-danger" style="padding:4px 8px; font-size:12px;" 
+                            onclick="deleteDevice('${dev.id}', '${stationId}')">删除</button>
+                </div>
+            `).join('');
+            container.innerHTML = devHtml;
+        } catch (e) {
+            container.innerHTML = `<span style="color:red;">加载失败: ${e.message}</span>`;
+        }
+    }
+
+    // 删除站点
+    async function deleteStation(stationId) {
+        if (!confirm("确定要删除此站点及旗下所有设备吗？此操作不可恢复！")) return;
+        
+        const res = await fetch(`/api/stations/${stationId}`, { method: 'DELETE' });
+        if (res.ok) {
+            expandedStations.delete(stationId); // 收起
+            alert("站点已删除");
+            loadStations();
+        } else {
+            const err = await res.json().catch(() => ({}));
+            alert("删除失败：" + (err.error || "未知错误"));
+        }
+    }
+
+    // 删除设备
+    async function deleteDevice(deviceId, stationId) {
+        if (!confirm("确定要删除此灭火器吗？")) return;
+        
+        const res = await fetch(`/api/devices/${deviceId}`, { method: 'DELETE' });
+        if (res.ok) {
+            alert("设备已删除");
+            loadStationDevices(stationId); // 仅刷新该站点设备
+        } else {
+            const err = await res.json().catch(() => ({}));
+            alert("删除失败：" + (err.error || "未知错误"));
+        }
+    }
+
+    // ===== 以下是你原有的函数（保持不变，仅微调）=====
+    
+    async function saveStation() {
+        const name = document.getElementById('stName').value.trim();
+        const location = document.getElementById('stLoc').value.trim();
+        if(!name) return alert("请填写站点名称");
+
+        const res = await fetch('/api/stations', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({name, location})
+        });
+
+        if(res.ok) {
+            alert("站点创建成功！");
+            location.reload();
+        }
+    }
+
+    function initCheckItems() {
+        const container = document.getElementById('checksContainer');
+        container.innerHTML = '';
+        const defaults = ["压力表在绿区","外观无锈蚀","喷嘴无堵塞","铅封完好"];
+        defaults.forEach(item => addCheckItem(item));
+    }
+
+    function addCheckItem(value = '') {
+        const container = document.getElementById('checksContainer');
+        const div = document.createElement('div');
+        div.style.display = 'flex';
+        div.style.gap = '8px';
+        div.style.marginBottom = '6px';
+        div.innerHTML = `
+            <input type="text" value="${value.replace(/"/g, '&quot;')}" 
+                placeholder="输入检查内容..." style="flex:1; padding:6px; border:1px solid #ccc; border-radius:4px;">
+            <button type="button" class="btn-danger" style="width:30px; padding:0; font-size:16px;" 
+                    onclick="this.parentElement.remove()">−</button>
+        `;
+        container.appendChild(div);
+    }
+
+    function getCheckItems() {
+        const inputs = document.querySelectorAll('#checksContainer input[type="text"]');
+        return Array.from(inputs).map(el => el.value.trim()).filter(text => text !== '');
+    }
+
+    function openDeviceModal(stationId, stationName) {
+        activeStationId = stationId;
+        document.getElementById('targetStationName').textContent = stationName;
+        initCheckItems();
+        openModal('deviceModal');
+    }
+
+    async function saveDevice() {
+        const checkItems = getCheckItems();
+        const payload = {
+            name: document.getElementById('devName').value.trim(),
+            location: document.getElementById('devLoc').value.trim(),
+            specs: document.getElementById('devSpecs').value.trim(),
+            expiry_date: document.getElementById('devExpiry').value,
+            check_items: checkItems
+        };
+
+        if (!payload.name || !payload.location) {
+            alert("设备名称和位置不能为空！");
+            return;
+        }
+
+        const res = await fetch(`/api/stations/${activeStationId}/devices`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+
+        if (res.ok) {
+            alert("设备已成功添加到该站！");
+            closeModal('deviceModal');
+            // 自动展开该站点以显示新设备
+            expandedStations.add(activeStationId);
+            loadStations();
+        } else {
+            const err = await res.json().catch(() => ({}));
+            alert("保存失败：" + (err.error || "未知错误"));
+        }
+    }
+
+    function showStationQR(id, name) {
+        const url = `${window.location.origin}/station_status.html?id=${id}`;
+        const win = window.open("", "_blank", "width=350,height=480");
+        win.document.write(`
+            <div style="text-align:center; padding:30px; font-family:sans-serif;">
+                <h2 style="margin:0;">${name}</h2>
+                <p style="color:#666;">全站巡检总码</p>
+                <div id="qrcode" style="margin:25px auto; display:inline-block;"></div>
+                <p style="font-size:11px; color:#999; word-break:break-all;">${url}</p>
+                <button onclick="window.print()" style="margin-top:15px; padding:10px 20px; cursor:pointer;">打印此码</button>
+            </div>
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"><\/script>
+            <script>new QRCode(document.getElementById("qrcode"), { text: "${url}", width: 220, height: 220 });<\/script>
+        `);
+    }
+
+    function openModal(id) { document.getElementById(id).style.display = 'flex'; }
+    function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+
+    // 启动
+    loadStations();
+</script>
+</body>
+</html>
